@@ -1,0 +1,68 @@
+name: Deploy to Hetzner Cloud
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+    # Criar novo servidor
+    - name: Criar novo servidor Hetzner
+      id: setup_server
+      uses: saitho/hetzner-cloud-action@master
+      with:
+        action: create
+        server_name: servidor-coleta-dados
+        server_image: ubuntu-24.04
+        server_type: cx22
+        server_location: hel1
+        server_ssh_key_name: github-ci
+        wait_for_ssh: 1
+      env:
+        API_TOKEN: ${{ secrets.HETZNER_API_TOKEN }}
+
+    - name: Obter IP do servidor
+      run: echo "SERVER_IP=${{ steps.setup_server.outputs.hcloud_server_created_ipv4 }}" >> $GITHUB_ENV
+
+    - name: Configurar SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ env.SERVER_IP }} >> ~/.ssh/known_hosts
+
+    - name: Instalar Docker, Git, Python 3.11 e Criar Usuário Deploy
+      run: |
+        ssh -i ~/.ssh/id_rsa root@${{ env.SERVER_IP }} << 'EOF'
+        # Atualizar pacotes
+        apt update && apt upgrade -y
+        
+        # Instalar pacotes essenciais
+        apt install -y docker.io docker-compose git software-properties-common
+        
+        # Adicionar repositório PPA para Python 3.11
+        add-apt-repository -y ppa:deadsnakes/ppa
+        apt update
+        apt install -y python3.11 python3.11-venv python3.11-dev python3-pip
+        
+        # Criar usuário deploy se não existir
+        id -u deploy &>/dev/null || useradd -m -s /bin/bash deploy
+        
+        # Adicionar deploy ao grupo docker
+        usermod -aG docker deploy
+        
+        # Criar chave SSH para deploy
+        mkdir -p /home/deploy/.ssh
+        echo "${{ secrets.SSH_PUBLIC_KEY }}" > /home/deploy/.ssh/authorized_keys
+        chown -R deploy:deploy /home/deploy/.ssh
+        chmod 700 /home/deploy/.ssh
+        chmod 600 /home/deploy/.ssh/authorized_keys
+        
+        # Ativar Docker
+        systemctl enable --now docker
+        EOF
+  
