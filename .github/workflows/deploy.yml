@@ -57,6 +57,11 @@ jobs:
         
         # Criar chave SSH para deploy
         mkdir -p /home/deploy/.ssh
+        
+        # Adiciona a chave pública correspondente
+        echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/id_rsa.pub
+        chmod 644 ~/.ssh/id_rsa.pub
+        
         echo "${{ secrets.SSH_PUBLIC_KEY }}" > /home/deploy/.ssh/authorized_keys
         chown -R deploy:deploy /home/deploy/.ssh
         chmod 700 /home/deploy/.ssh
